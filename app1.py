@@ -17,10 +17,15 @@ st.set_page_config(
 def load_data():
     return pd.read_csv("employee_attrition_datasett.csv")
 
-df = load_data()
+try:
+    df = load_data()
+    df.columns = [c.strip() for c in df.columns]
+except Exception as e:
+    st.error(f"Error loading CSV file: {e}")
+    st.stop()
 
 # ---------------------------------
-# SIDEBAR FILTERS (USER INPUTS)
+# SIDEBAR FILTERS
 # ---------------------------------
 st.sidebar.header("🔍 Employee Filters")
 
@@ -44,22 +49,44 @@ marital_status = st.sidebar.selectbox(
     ["All"] + sorted(df["Marital_Status"].unique().tolist())
 )
 
-age_range = st.sidebar.slider(
-    "Age Range",
-    int(df["Age"].min()),
-    int(df["Age"].max()),
-    (int(df["Age"].min()), int(df["Age"].max()))
+# =====================================================
+# ✅ UPDATED — OPTIONAL MANUAL AGE INPUT (NO LIMITS)
+# =====================================================
+st.sidebar.subheader("Age Range (Optional)")
+
+min_age = st.sidebar.number_input(
+    "Minimum Age",
+    value=None,
+    placeholder="Enter min age"
 )
 
-income_range = st.sidebar.slider(
-    "Monthly Income Range",
-    int(df["Monthly_Income"].min()),
-    int(df["Monthly_Income"].max()),
-    (int(df["Monthly_Income"].min()), int(df["Monthly_Income"].max()))
+max_age = st.sidebar.number_input(
+    "Maximum Age",
+    value=None,
+    placeholder="Enter max age"
 )
 
 # =====================================================
-# STEP 1️⃣ APPLY FILTERS (CRITICAL FIX)
+# ✅ UPDATED — OPTIONAL MANUAL INCOME INPUT (NO LIMITS)
+# =====================================================
+st.sidebar.subheader("Monthly Income Range (Optional)")
+
+min_income = st.sidebar.number_input(
+    "Minimum Income",
+    value=None,
+    placeholder="Enter min income",
+    step=500
+)
+
+max_income = st.sidebar.number_input(
+    "Maximum Income",
+    value=None,
+    placeholder="Enter max income",
+    step=500
+)
+
+# =====================================================
+# STEP 1️⃣ APPLY FILTERS
 # =====================================================
 filtered_df = df.copy()
 
@@ -75,29 +102,32 @@ if job_role != "All":
 if marital_status != "All":
     filtered_df = filtered_df[filtered_df["Marital_Status"] == marital_status]
 
-filtered_df = filtered_df[
-    (filtered_df["Age"] >= age_range[0]) &
-    (filtered_df["Age"] <= age_range[1])
-]
+# ✅ Age filter only if user entered value
+if min_age is not None:
+    filtered_df = filtered_df[filtered_df["Age"] >= min_age]
 
-filtered_df = filtered_df[
-    (filtered_df["Monthly_Income"] >= income_range[0]) &
-    (filtered_df["Monthly_Income"] <= income_range[1])
-]
+if max_age is not None:
+    filtered_df = filtered_df[filtered_df["Age"] <= max_age]
+
+# ✅ Income filter only if user entered value
+if min_income is not None:
+    filtered_df = filtered_df[filtered_df["Monthly_Income"] >= min_income]
+
+if max_income is not None:
+    filtered_df = filtered_df[filtered_df["Monthly_Income"] <= max_income]
 
 # =====================================================
-# STEP 2️⃣ KPI CALCULATIONS (USING filtered_df)
+# STEP 2️⃣ KPI CALCULATIONS
 # =====================================================
 total_employees = filtered_df.shape[0]
 employees_left = filtered_df[filtered_df["Attrition"] == "Yes"].shape[0]
 
 if total_employees > 0:
     attrition_rate = round((employees_left / total_employees) * 100, 2)
+    avg_income = int(filtered_df["Monthly_Income"].mean())
 else:
     attrition_rate = 0
-
-avg_income = int(filtered_df["Monthly_Income"].mean()) if total_employees > 0 else 0
-avg_years_company = round(filtered_df["Years_at_Company"].mean(), 1) if total_employees > 0 else 0
+    avg_income = 0
 
 # ---------------------------------
 # DASHBOARD TITLE
@@ -112,64 +142,95 @@ col1, col2, col3, col4 = st.columns(4)
 
 col1.metric("👥 Total Employees", total_employees)
 col2.metric("🚪 Employees Left", employees_left)
-col3.metric("📉 Attrition Rate (%)", attrition_rate)
-col4.metric("💰 Avg Monthly Income", avg_income)
+col3.metric("📉 Attrition Rate (%)", f"{attrition_rate}%")
+col4.metric("💰 Avg Monthly Income", f"{avg_income:,}")
 
 st.divider()
 
 # ---------------------------------
 # VISUALIZATIONS
 # ---------------------------------
+c1, c2 = st.columns(2)
 
-# Attrition by Department
-fig_dept = px.bar(
-    filtered_df,
-    x="Department",
-    color="Attrition",
-    title="Attrition by Department",
-    barmode="group"
-)
-st.plotly_chart(fig_dept, use_container_width=True)
+with c1:
+    st.plotly_chart(px.bar(filtered_df, x="Department", color="Attrition", barmode="group", title="Attrition by Department"), use_container_width=True)
+    st.plotly_chart(px.pie(filtered_df, names="Gender", color="Attrition", title="Attrition by Gender"), use_container_width=True)
 
-# Attrition by Job Role
-fig_role = px.bar(
-    filtered_df,
-    x="Job_Role",
-    color="Attrition",
-    title="Attrition by Job Role"
-)
-st.plotly_chart(fig_role, use_container_width=True)
+with c2:
+    st.plotly_chart(px.bar(filtered_df, x="Job_Role", color="Attrition", title="Attrition by Job Role"), use_container_width=True)
+    st.plotly_chart(px.histogram(filtered_df, x="Age", color="Attrition", nbins=20, title="Age Distribution vs Attrition"), use_container_width=True)
 
-# Attrition by Gender
-fig_gender = px.pie(
-    filtered_df,
-    names="Gender",
-    color="Attrition",
-    title="Attrition by Gender"
-)
-st.plotly_chart(fig_gender, use_container_width=True)
+st.plotly_chart(px.box(filtered_df, x="Attrition", y="Monthly_Income", title="Monthly Income vs Attrition"), use_container_width=True)
 
-# Age vs Attrition
-fig_age = px.histogram(
-    filtered_df,
-    x="Age",
-    color="Attrition",
-    nbins=20,
-    title="Age Distribution vs Attrition"
-)
-st.plotly_chart(fig_age, use_container_width=True)
+# =====================================================
+# STEP 4️⃣ REASON & ATTRIBUTES ANALYSIS
+# =====================================================
+st.divider()
+st.header("🎯 Deep Dive: Why are Employees Leaving?")
 
-# Income vs Attrition
-fig_income = px.box(
-    filtered_df,
-    x="Attrition",
-    y="Monthly_Income",
-    title="Monthly Income vs Attrition"
-)
-st.plotly_chart(fig_income, use_container_width=True)
+reason_col1, reason_col2 = st.columns(2)
+
+with reason_col1:
+    ot_col = "OverTime" if "OverTime" in filtered_df.columns else "Overtime"
+    if ot_col in filtered_df.columns:
+        st.plotly_chart(
+            px.histogram(filtered_df, x=ot_col, color="Attrition", barmode="group",
+                         title="Reason: Impact of Overtime on Attrition"),
+            use_container_width=True
+        )
+
+    if "Distance_From_Home" in filtered_df.columns:
+        st.plotly_chart(
+            px.box(filtered_df, x="Attrition", y="Distance_From_Home",
+                   title="Reason: Commute Distance vs Attrition"),
+            use_container_width=True
+        )
+
+with reason_col2:
+    if "Job_Satisfaction" in filtered_df.columns:
+        st.plotly_chart(
+            px.histogram(filtered_df, x="Job_Satisfaction", color="Attrition",
+                         barmode="group", title="Reason: Job Satisfaction Level"),
+            use_container_width=True
+        )
+
+    leavers_df = filtered_df[filtered_df["Attrition"] == "Yes"]
+    if not leavers_df.empty:
+        st.plotly_chart(
+            px.sunburst(leavers_df, path=["Marital_Status", "Gender"],
+                        title="Attrition Profile: Marital Status & Gender"),
+            use_container_width=True
+        )
+    else:
+        st.info("No data available for leavers in this selection.")
 
 # ---------------------------------
-# DATA PREVIEW
+# Scatter
 # ---------------------------------
+ot_hover = [ot_col] if ot_col in filtered_df.columns else []
+
+st.plotly_chart(
+    px.scatter(
+        filtered_df,
+        x="Years_at_Company",
+        y="Monthly_Income",
+        color="Attrition",
+        size="Age",
+        hover_data=["Job_Role"] + ot_hover,
+        title="Tenure vs Income (Bubble Size = Age)"
+    ),
+    use_container_width=True
+)
+
+# ---------------------------------
+# INSIGHTS
+# ---------------------------------
+st.info("""
+**Attrition Drivers Identified:**
+• Work-Life Balance (Overtime)
+• Financial factors (Income)
+• Demographics & Satisfaction
+""")
+
 with st.expander("📄 View Filtered Employee Data"):
-    st.dataframe(filtered_df)
+    st.dataframe(filtered_df, use_container_width=True)
